@@ -1,31 +1,13 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<title>SCAN KHO</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-
 <script src="https://unpkg.com/html5-qrcode"></script>
 
 <style>
-body {
-  text-align: center;
-  font-family: Arial;
-  background: #f5f5f5;
-}
-#reader {
-  width: 300px;
-  margin: auto;
-}
-button {
-  padding: 10px 20px;
-  margin: 8px;
-  font-size: 16px;
-}
-#status {
-  font-size: 18px;
-  margin-top: 10px;
-}
+body { text-align:center; font-family:Arial; }
+#reader { width:300px; margin:auto; }
+button { padding:10px; margin:5px; }
 </style>
 </head>
 
@@ -35,64 +17,74 @@ button {
 
 <button onclick="setMode('IN')">📥 Nhập</button>
 <button onclick="setMode('OUT')">📤 Xuất</button>
-
 <br>
-
 <button onclick="switchCamera()">🔄 Đổi camera</button>
 
 <div id="reader"></div>
 
-<p><b>QR:</b></p>
-<p id="qrText">Đang chờ...</p>
-
+<p>QR: <span id="qrText">...</span></p>
 <p id="status">Đang mở camera...</p>
 
 <script>
-const API_URL = "https://script.google.com/macros/s/AKfycbwRe5f7GmJFNld6E5HxdXyPnnOY_S5q3ZENrS950RNsdj65DEwQGAFsm0aq4TeIfxHF/exec"; // 👉 DÁN LINK CỦA BẠN
+const API_URL = "https://script.google.com/macros/s/AKfycbwRe5f7GmJFNld6E5HxdXyPnnOY_S5q3ZENrS950RNsdj65DEwQGAFsm0aq4TeIfxHF/exec"; // 👉 DÁN LINK
 
 let html5QrCode;
-let currentCamera = "environment";
+let cameras = [];
+let currentCameraIndex = 0;
 let mode = "IN";
 let lastScan = 0;
 
 // chọn mode
-function setMode(m) {
+function setMode(m){
   mode = m;
-  document.getElementById("status").innerText = "Chế độ: " + (m === "IN" ? "Nhập" : "Xuất");
+  document.getElementById("status").innerText =
+    "Chế độ: " + (m === "IN" ? "Nhập" : "Xuất");
 }
 
-// mở camera
-function startScanner() {
+// 🔥 load camera chuẩn
+function initCamera(){
   html5QrCode = new Html5Qrcode("reader");
 
-  Html5Qrcode.getCameras().then(devices => {
-    let camId = devices.find(d =>
-      currentCamera === "environment"
-        ? d.label.toLowerCase().includes("back")
-        : d.label.toLowerCase().includes("front")
-    )?.id || devices[0].id;
+  Html5Qrcode.getCameras().then(devices=>{
+    cameras = devices;
 
-    html5QrCode.start(
-      camId,
-      { fps: 10, qrbox: 250 },
-      onScanSuccess
+    // 🔥 ưu tiên camera sau
+    let backIndex = devices.findIndex(cam =>
+      cam.label.toLowerCase().includes("back") ||
+      cam.label.toLowerCase().includes("rear")
     );
 
-    document.getElementById("status").innerText = "📷 Sẵn sàng quét";
+    currentCameraIndex = backIndex !== -1 ? backIndex : 0;
+
+    startCamera();
+  });
+}
+
+// start camera
+function startCamera(){
+  html5QrCode.start(
+    cameras[currentCameraIndex].id,
+    { fps:15, qrbox:250 },
+    onScanSuccess
+  ).then(()=>{
+    document.getElementById("status").innerText = "📷 Sẵn sàng";
   });
 }
 
 // đổi camera
-function switchCamera() {
-  currentCamera = currentCamera === "environment" ? "user" : "environment";
-  html5QrCode.stop().then(startScanner);
+function switchCamera(){
+  html5QrCode.stop().then(()=>{
+    currentCameraIndex = (currentCameraIndex+1)%cameras.length;
+    startCamera();
+  });
 }
 
-// khi quét thành công
-function onScanSuccess(decodedText) {
+// scan thành công
+function onScanSuccess(decodedText){
+
   let now = Date.now();
 
-  if (now - lastScan < 10000) {
+  if(now - lastScan < 10000){
     document.getElementById("status").innerText = "⛔ Đợi 10 giây";
     return;
   }
@@ -102,16 +94,17 @@ function onScanSuccess(decodedText) {
   document.getElementById("qrText").innerText = decodedText;
 
   fetch(API_URL + "?data=" + encodeURIComponent(decodedText + "|MODE:" + mode))
-    .then(res => res.text())
-    .then(data => {
-      document.getElementById("status").innerText = data;
+    .then(res=>res.text())
+    .then(msg=>{
+      document.getElementById("status").innerText = msg;
     })
-    .catch(() => {
-      document.getElementById("status").innerText = "❌ Lỗi gửi dữ liệu";
+    .catch(()=>{
+      document.getElementById("status").innerText = "❌ Lỗi gửi";
     });
 }
 
-startScanner();
+// chạy
+initCamera();
 </script>
 
 </body>
