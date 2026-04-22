@@ -1,106 +1,117 @@
 <!DOCTYPE html>
 <html>
 <head>
+<meta charset="UTF-8">
+<title>SCAN KHO</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<script src="https://unpkg.com/jsqr"></script>
+
+<script src="https://unpkg.com/html5-qrcode"></script>
+
+<style>
+body {
+  text-align: center;
+  font-family: Arial;
+  background: #f5f5f5;
+}
+#reader {
+  width: 300px;
+  margin: auto;
+}
+button {
+  padding: 10px 20px;
+  margin: 8px;
+  font-size: 16px;
+}
+#status {
+  font-size: 18px;
+  margin-top: 10px;
+}
+</style>
 </head>
 
-<body style="text-align:center;font-family:sans-serif">
+<body>
 
 <h2>📷 SCAN KHO</h2>
 
-<video id="video" width="300" autoplay playsinline></video>
+<button onclick="setMode('IN')">📥 Nhập</button>
+<button onclick="setMode('OUT')">📤 Xuất</button>
 
-<br><br>
+<br>
 
-<button onclick="setMode('NHAP')">📥 Nhập</button>
-<button onclick="setMode('XUAT')">📤 Xuất</button>
+<button onclick="switchCamera()">🔄 Đổi camera</button>
 
-<br><br>
+<div id="reader"></div>
 
-<button onclick="capture()">📸 Chụp & Quét</button>
+<p><b>QR:</b></p>
+<p id="qrText">Đang chờ...</p>
 
-<h3 id="mode">Chưa chọn chế độ</h3>
-<h3 id="raw">QR:</h3>
-<h1 id="status">Đang mở camera...</h1>
-
-<canvas id="canvas" style="display:none;"></canvas>
+<p id="status">Đang mở camera...</p>
 
 <script>
-const API_URL = "https://script.google.com/macros/s/AKfycbwRe5f7GmJFNld6E5HxdXyPnnOY_S5q3ZENrS950RNsdj65DEwQGAFsm0aq4TeIfxHF/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbwRe5f7GmJFNld6E5HxdXyPnnOY_S5q3ZENrS950RNsdj65DEwQGAFsm0aq4TeIfxHF/exec"; // 👉 DÁN LINK CỦA BẠN
 
-let mode = "";
-let video = document.getElementById("video");
-let lastScanTime = 0;
+let html5QrCode;
+let currentCamera = "environment";
+let mode = "IN";
+let lastScan = 0;
 
-// mở camera sau
-navigator.mediaDevices.getUserMedia({
-  video: { facingMode: "environment" }
-})
-.then(stream => {
-  video.srcObject = stream;
-  document.getElementById("status").innerText = "📷 Sẵn sàng";
-})
-.catch(()=>{
-  document.getElementById("status").innerText = "❌ Không mở camera";
-});
-
-function setMode(m){
+// chọn mode
+function setMode(m) {
   mode = m;
-  document.getElementById("mode").innerText = "Chế độ: " + m;
+  document.getElementById("status").innerText = "Chế độ: " + (m === "IN" ? "Nhập" : "Xuất");
 }
 
-function capture(){
+// mở camera
+function startScanner() {
+  html5QrCode = new Html5Qrcode("reader");
 
-  if(!mode){
-    alert("Chọn Nhập hoặc Xuất");
-    return;
-  }
+  Html5Qrcode.getCameras().then(devices => {
+    let camId = devices.find(d =>
+      currentCamera === "environment"
+        ? d.label.toLowerCase().includes("back")
+        : d.label.toLowerCase().includes("front")
+    )?.id || devices[0].id;
 
+    html5QrCode.start(
+      camId,
+      { fps: 10, qrbox: 250 },
+      onScanSuccess
+    );
+
+    document.getElementById("status").innerText = "📷 Sẵn sàng quét";
+  });
+}
+
+// đổi camera
+function switchCamera() {
+  currentCamera = currentCamera === "environment" ? "user" : "environment";
+  html5QrCode.stop().then(startScanner);
+}
+
+// khi quét thành công
+function onScanSuccess(decodedText) {
   let now = Date.now();
 
-  // 🔥 CHẶN 10 GIÂY
-  if(now - lastScanTime < 10000){
+  if (now - lastScan < 10000) {
     document.getElementById("status").innerText = "⛔ Đợi 10 giây";
     return;
   }
 
-  let canvas = document.getElementById("canvas");
-  let ctx = canvas.getContext("2d");
+  lastScan = now;
 
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
+  document.getElementById("qrText").innerText = decodedText;
 
-  ctx.drawImage(video, 0, 0);
-
-  let img = ctx.getImageData(0,0,canvas.width,canvas.height);
-
-  let code = jsQR(img.data, canvas.width, canvas.height);
-
-  if(code){
-    let data = code.data;
-
-    document.getElementById("raw").innerText = data;
-
-    send(data);
-
-    lastScanTime = now;
-
-  }else{
-    document.getElementById("status").innerText = "❌ Không thấy QR";
-  }
+  fetch(API_URL + "?data=" + encodeURIComponent(decodedText + "|MODE:" + mode))
+    .then(res => res.text())
+    .then(data => {
+      document.getElementById("status").innerText = data;
+    })
+    .catch(() => {
+      document.getElementById("status").innerText = "❌ Lỗi gửi dữ liệu";
+    });
 }
 
-function send(data){
-  fetch(API_URL + "?data=" + encodeURIComponent(data) + "&mode=" + mode)
-  .then(res=>res.text())
-  .then(msg=>{
-    document.getElementById("status").innerText = msg;
-  })
-  .catch(()=>{
-    document.getElementById("status").innerText = "❌ Lỗi gửi";
-  });
-}
+startScanner();
 </script>
 
 </body>
